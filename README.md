@@ -138,7 +138,3 @@ You can also use other hospital emails from `backend/prisma/hospitals.json` with
 
 - The frontend should use `VITE_API_BASE_URL=http://localhost:3000` for local development.
 - Some emergency features can still fall back to a basic flow if the AI service is not available, but the full experience needs the AI service running.
-
-## Status
-
-The README is now part of the local project. It has not been pushed by this step.
