@@ -10,6 +10,35 @@ from app.models import ChatContextDTO
 
 class AIContextLoader:
     BLOOD_GROUPS = ("A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-")
+    BLOOD_GROUP_ALIASES = {
+        "A+": "A+",
+        "A_PLUS": "A+",
+        "A-": "A-",
+        "A_MINUS": "A-",
+        "B+": "B+",
+        "B_PLUS": "B+",
+        "B-": "B-",
+        "B_MINUS": "B-",
+        "AB+": "AB+",
+        "AB_PLUS": "AB+",
+        "AB-": "AB-",
+        "AB_MINUS": "AB-",
+        "O+": "O+",
+        "O_PLUS": "O+",
+        "O-": "O-",
+        "O_MINUS": "O-",
+    }
+    RESOURCE_NAME_ALIASES = {
+        "icu": "icu bed",
+        "icu bed": "icu bed",
+        "icu_bed": "icu bed",
+        "general bed": "general bed",
+        "general_bed": "general bed",
+        "ventilator": "ventilator",
+        "oxygen cylinder": "oxygen cylinder",
+        "oxygen_cylinder": "oxygen cylinder",
+        "ambulance": "ambulance",
+    }
 
     def __init__(self, settings: Settings, chat_memory_service: ChatMemoryService) -> None:
         self.settings = settings
@@ -111,16 +140,19 @@ class AIContextLoader:
         resolved_hospital_id = self._resolve_hospital_id(hospital_id)
         context_parts = [self.load_hospital_context(resolved_hospital_id), ""]
 
-        messages = self._fetch_all(
-            """
-                SELECT role, message, created_at
-                FROM chat_messages
-                WHERE hospital_id = %s
-                ORDER BY created_at DESC
-                LIMIT 10
-            """,
-            (resolved_hospital_id,),
-        )
+        try:
+            messages = self._fetch_all(
+                """
+                    SELECT role, message, created_at
+                    FROM chat_messages
+                    WHERE hospital_id = %s
+                    ORDER BY created_at DESC
+                    LIMIT 10
+                """,
+                (resolved_hospital_id,),
+            )
+        except psycopg2.Error:
+            messages = []
         if messages:
             context_parts.append("=== Recent Conversation ===")
             for message in reversed(messages):
@@ -171,7 +203,7 @@ class AIContextLoader:
                 """
                     SELECT id, name, age, "bloodGroup"::text AS "bloodGroup", condition
                     FROM "Patient"
-                    ORDER BY "createdAt" DESC, id DESC
+                    ORDER BY id DESC
                     LIMIT 10
                 """
             ),
@@ -286,10 +318,11 @@ class AIContextLoader:
         return "\n".join(lines)
 
     def get_resource_units(self, context: ChatContextDTO, resource_name: str) -> int:
+        normalized_target = self._normalize_resource_name(resource_name)
         return sum(
             int(resource.get("units", 0))
             for resource in context.resources
-            if str(resource.get("name", "")).lower() == resource_name.lower()
+            if self._normalize_resource_name(str(resource.get("name", ""))) == normalized_target
         )
 
     def get_active_emergency_count(self, context: ChatContextDTO) -> int:
@@ -318,13 +351,16 @@ class AIContextLoader:
 
     def save_message(self, hospital_id: str, role: str, message: str) -> None:
         resolved_hospital_id = self._resolve_hospital_id(hospital_id)
-        self._execute(
-            """
-                INSERT INTO chat_messages (hospital_id, role, message, created_at, updated_at)
-                VALUES (%s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            """,
-            (resolved_hospital_id, role, message),
-        )
+        try:
+            self._execute(
+                """
+                    INSERT INTO chat_messages (hospital_id, role, message, created_at, updated_at)
+                    VALUES (%s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """,
+                (resolved_hospital_id, role, message),
+            )
+        except psycopg2.Error:
+            pass
         self.chat_memory_service.add_message(str(resolved_hospital_id), role, message)
 
     def get_conversation_context(self, hospital_id: str) -> str:
@@ -332,64 +368,67 @@ class AIContextLoader:
 
     def sync_hospital_ai_context(self, hospital_id: str) -> None:
         resolved_hospital_id = self._resolve_hospital_id(hospital_id)
-        self._execute(
-            """
-                INSERT INTO hospital_ai_context (
-                    hospital_id,
-                    hospital_name,
-                    city,
-                    state,
-                    phone,
-                    email,
-                    icu_beds_available,
-                    ventilators_available,
-                    oxygen_beds_available,
-                    blood_units_available,
-                    ambulances_available,
-                    active_emergency_requests,
-                    occupancy_rate,
-                    last_synced,
-                    last_updated
-                )
-                SELECT
-                    h.id,
-                    h.name,
-                    h.address,
-                    'India',
-                    h.phone,
-                    h.email,
-                    COALESCE(SUM(CASE WHEN r.name::text = 'ICU Bed' THEN r.units ELSE 0 END), 0),
-                    COALESCE(SUM(CASE WHEN r.name::text = 'Ventilator' THEN r.units ELSE 0 END), 0),
-                    COALESCE(SUM(CASE WHEN r.name::text = 'Oxygen Cylinder' THEN r.units ELSE 0 END), 0),
-                    COALESCE(SUM(bs.units), 0),
-                    COALESCE(SUM(CASE WHEN r.name::text = 'Ambulance' THEN r.units ELSE 0 END), 0),
-                    COUNT(DISTINCT CASE WHEN fe.status::text = 'PENDING' THEN fe.id END),
-                    0.0,
-                    CURRENT_TIMESTAMP,
-                    CURRENT_TIMESTAMP
-                FROM "Hospital" h
-                LEFT JOIN "Resource" r ON h.id = r."hospitalId"
-                LEFT JOIN "BloodStock" bs ON h.id = bs."hospitalId"
-                LEFT JOIN "FeatureEmergency" fe ON h.id = fe."createdById"
-                WHERE h.id = %s
-                GROUP BY h.id, h.name, h.address, h.phone, h.email
-                ON CONFLICT (hospital_id) DO UPDATE SET
-                    hospital_name = EXCLUDED.hospital_name,
-                    city = EXCLUDED.city,
-                    state = EXCLUDED.state,
-                    phone = EXCLUDED.phone,
-                    email = EXCLUDED.email,
-                    icu_beds_available = EXCLUDED.icu_beds_available,
-                    ventilators_available = EXCLUDED.ventilators_available,
-                    oxygen_beds_available = EXCLUDED.oxygen_beds_available,
-                    blood_units_available = EXCLUDED.blood_units_available,
-                    ambulances_available = EXCLUDED.ambulances_available,
-                    active_emergency_requests = EXCLUDED.active_emergency_requests,
-                    last_synced = CURRENT_TIMESTAMP,
-                    last_updated = CURRENT_TIMESTAMP
-            """,
-            (resolved_hospital_id,),
-        )
+        try:
+            self._execute(
+                """
+                    INSERT INTO hospital_ai_context (
+                        hospital_id,
+                        hospital_name,
+                        city,
+                        state,
+                        phone,
+                        email,
+                        icu_beds_available,
+                        ventilators_available,
+                        oxygen_beds_available,
+                        blood_units_available,
+                        ambulances_available,
+                        active_emergency_requests,
+                        occupancy_rate,
+                        last_synced,
+                        last_updated
+                    )
+                    SELECT
+                        h.id,
+                        h.name,
+                        h.address,
+                        'India',
+                        h.phone,
+                        h.email,
+                        COALESCE(SUM(CASE WHEN r.name::text IN ('ICU Bed', 'ICU_BED') THEN r.units ELSE 0 END), 0),
+                        COALESCE(SUM(CASE WHEN r.name::text = 'Ventilator' THEN r.units ELSE 0 END), 0),
+                        COALESCE(SUM(CASE WHEN r.name::text IN ('Oxygen Cylinder', 'OXYGEN_CYLINDER') THEN r.units ELSE 0 END), 0),
+                        COALESCE(SUM(bs.units), 0),
+                        COALESCE(SUM(CASE WHEN r.name::text = 'Ambulance' THEN r.units ELSE 0 END), 0),
+                        COUNT(DISTINCT CASE WHEN fe.status::text = 'PENDING' THEN fe.id END),
+                        0.0,
+                        CURRENT_TIMESTAMP,
+                        CURRENT_TIMESTAMP
+                    FROM "Hospital" h
+                    LEFT JOIN "Resource" r ON h.id = r."hospitalId"
+                    LEFT JOIN "BloodStock" bs ON h.id = bs."hospitalId"
+                    LEFT JOIN "FeatureEmergency" fe ON h.id = fe."createdById"
+                    WHERE h.id = %s
+                    GROUP BY h.id, h.name, h.address, h.phone, h.email
+                    ON CONFLICT (hospital_id) DO UPDATE SET
+                        hospital_name = EXCLUDED.hospital_name,
+                        city = EXCLUDED.city,
+                        state = EXCLUDED.state,
+                        phone = EXCLUDED.phone,
+                        email = EXCLUDED.email,
+                        icu_beds_available = EXCLUDED.icu_beds_available,
+                        ventilators_available = EXCLUDED.ventilators_available,
+                        oxygen_beds_available = EXCLUDED.oxygen_beds_available,
+                        blood_units_available = EXCLUDED.blood_units_available,
+                        ambulances_available = EXCLUDED.ambulances_available,
+                        active_emergency_requests = EXCLUDED.active_emergency_requests,
+                        last_synced = CURRENT_TIMESTAMP,
+                        last_updated = CURRENT_TIMESTAMP
+                """,
+                (resolved_hospital_id,),
+            )
+        except psycopg2.Error:
+            pass
 
     def _load_blood_stock(self, hospital_id: int) -> dict[str, Any]:
         rows = self._fetch_all(
@@ -403,7 +442,9 @@ class AIContextLoader:
         )
         stock = {blood_group: 0 for blood_group in self.BLOOD_GROUPS}
         for row in rows:
-            stock[str(row["blood_group"])] = int(row["units"])
+            normalized_blood_group = self._normalize_blood_group(str(row["blood_group"]))
+            if normalized_blood_group in stock:
+                stock[normalized_blood_group] = int(row["units"])
         return stock
 
     def _fetch_all(self, query: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
@@ -432,6 +473,14 @@ class AIContextLoader:
             return int(hospital_id)
         except (TypeError, ValueError):
             return 1
+
+    def _normalize_blood_group(self, blood_group: str) -> str:
+        return self.BLOOD_GROUP_ALIASES.get(str(blood_group).strip().upper(), str(blood_group).strip().upper())
+
+    def _normalize_resource_name(self, resource_name: str) -> str:
+        normalized = str(resource_name).strip().lower().replace("-", " ").replace("_", " ")
+        normalized = " ".join(normalized.split())
+        return self.RESOURCE_NAME_ALIASES.get(normalized, normalized)
 
     def _is_critical_condition(self, condition: str) -> bool:
         normalized = condition.lower()

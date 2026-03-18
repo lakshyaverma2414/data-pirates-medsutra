@@ -1,62 +1,155 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X, MessageCircle, Send, Bot } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { Link } from "react-router";
 
-export function Chatbot() {
+type ChatRole = "user" | "bot";
+
+type ChatMessage = {
+  role: ChatRole;
+  content: string;
+  tone?: "default" | "error";
+};
+
+type QuickOption = {
+  label: string;
+  route?: string;
+  prompt?: string;
+};
+
+type ChatbotProps = {
+  hospitalId?: string;
+};
+
+const AI_API_BASE_URL = (
+  (import.meta as ImportMeta & { env?: Record<string, string> }).env
+    ?.VITE_AI_API_BASE_URL || "http://localhost:8000"
+).replace(/\/$/, "");
+
+const INITIAL_MESSAGES: ChatMessage[] = [
+  {
+    role: "bot",
+    content:
+      "Hello! I'm your MedSutra assistant. Ask me about hospital capacity, emergencies, blood stock, or what to do next.",
+  },
+];
+
+const QUICK_OPTIONS: QuickOption[] = [
+  { label: "Report Emergency", route: "/emergency" },
+  {
+    label: "Find Hospital",
+    prompt:
+      "Help me find a suitable hospital from the current MedSutra network and tell me what details I should check first.",
+  },
+  { label: "Request Ambulance", route: "/emergency" },
+  { label: "Donate Blood", route: "/blood-donation" },
+  {
+    label: "Check Blood Availability",
+    prompt:
+      "Check blood availability from the current MedSutra hospital context and tell me what blood groups look available right now.",
+  },
+];
+
+async function requestChatReply(message: string, hospitalId: string) {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  const token = window.localStorage.getItem("token");
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${AI_API_BASE_URL}/api/ai/chat`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ hospitalId, message }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(errorText || "Unable to reach the AI assistant.");
+  }
+
+  const payload = await response.json().catch(() => ({}));
+  const reply =
+    payload && typeof payload.reply === "string" ? payload.reply.trim() : "";
+
+  if (!reply) {
+    throw new Error("The AI assistant returned an empty response.");
+  }
+
+  if (reply.toLowerCase().startsWith("error processing request:")) {
+    throw new Error(reply);
+  }
+
+  return reply;
+}
+
+export function Chatbot({ hospitalId = "1" }: ChatbotProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [messages, setMessages] = useState([
-    {
-      role: "bot",
-      content: "Hello! I'm your MedSutra assistant. How can I help you today?",
-    },
-  ]);
+  const [messages, setMessages] = useState(INITIAL_MESSAGES);
   const [input, setInput] = useState("");
+  const [isSending, setIsSending] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
-  const quickOptions = [
-    { label: "Report Emergency", action: "/emergency" },
-    { label: "Find Hospital", action: "find-hospital" },
-    { label: "Request Ambulance", action: "/emergency" },
-    { label: "Donate Blood", action: "/blood-donation" },
-    { label: "Check Blood Availability", action: "/blood-donation" },
-  ];
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isSending]);
 
-  const handleQuickOption = (option: { label: string; action: string }) => {
-    if (option.action.startsWith("/")) {
-      // It's a route
-      window.location.href = option.action;
-    } else {
-      // Send as message
-      setMessages([
-        ...messages,
-        { role: "user", content: option.label },
+  const sendMessage = async (
+    rawMessage: string,
+    { displayMessage }: { displayMessage?: string } = {},
+  ) => {
+    const trimmedMessage = rawMessage.trim();
+    if (!trimmedMessage || isSending) {
+      return;
+    }
+
+    setInput("");
+    setMessages((current) => [
+      ...current,
+      { role: "user", content: displayMessage?.trim() || trimmedMessage },
+    ]);
+    setIsSending(true);
+
+    try {
+      const reply = await requestChatReply(trimmedMessage, hospitalId);
+      setMessages((current) => [
+        ...current,
+        { role: "bot", content: reply, tone: "default" },
+      ]);
+    } catch (error) {
+      const detail =
+        error instanceof Error && error.message
+          ? ` ${error.message}`
+          : "";
+
+      setMessages((current) => [
+        ...current,
         {
           role: "bot",
-          content: `I can help you with that. ${
-            option.action === "find-hospital"
-              ? "Here are nearby hospitals with availability..."
-              : "Let me assist you with this request."
-          }`,
+          content: `I could not get a reply from the MedSutra AI service right now.${detail}`,
+          tone: "error",
         },
       ]);
+    } finally {
+      setIsSending(false);
     }
   };
 
+  const handleQuickOption = (option: QuickOption) => {
+    if (option.route) {
+      window.location.assign(option.route);
+      return;
+    }
+
+    void sendMessage(option.prompt || option.label, {
+      displayMessage: option.label,
+    });
+  };
+
   const handleSend = () => {
-    if (!input.trim()) return;
-
-    const userMessage = input;
-    setInput("");
-
-    setMessages([
-      ...messages,
-      { role: "user", content: userMessage },
-      {
-        role: "bot",
-        content:
-          "Thank you for your message. Our system is processing your request. For emergencies, please use the 'Report Emergency' option or call 1800-MEDSUTRA.",
-      },
-    ]);
+    void sendMessage(input);
   };
 
   return (
@@ -115,34 +208,49 @@ export function Chatbot() {
                 <motion.div
                   key={index}
                   initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className={`flex ${
-                    message.role === "user" ? "justify-end" : "justify-start"
-                  }`}
-                >
-                  <div
-                    className={`max-w-[80%] px-4 py-2 rounded-2xl ${
-                      message.role === "user"
-                        ? "bg-[#1F3A5F] text-white"
-                        : "bg-white border border-border text-foreground"
+                    animate={{ opacity: 1, y: 0 }}
+                    className={`flex ${
+                      message.role === "user" ? "justify-end" : "justify-start"
                     }`}
                   >
-                    {message.content}
+                    <div
+                      className={`max-w-[80%] px-4 py-2 rounded-2xl ${
+                        message.role === "user"
+                          ? "bg-[#1F3A5F] text-white"
+                          : message.tone === "error"
+                            ? "bg-[#FFF5F5] border border-[#F5C2C7] text-[#8A1C1C]"
+                            : "bg-white border border-border text-foreground"
+                      }`}
+                    >
+                      {message.content}
+                    </div>
+                  </motion.div>
+                ))}
+
+              {isSending && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex justify-start"
+                >
+                  <div className="max-w-[80%] px-4 py-2 rounded-2xl bg-white border border-border text-foreground">
+                    MedSutra Assistant is thinking...
                   </div>
                 </motion.div>
-              ))}
+              )}
 
               {/* Quick Options */}
-              {messages.length === 1 && (
+              {messages.length === 1 && !isSending && (
                 <div className="space-y-2">
                   <p className="text-sm text-foreground/60 text-center">Quick Actions:</p>
-                  {quickOptions.map((option, index) => (
+                  {QUICK_OPTIONS.map((option, index) => (
                     <motion.button
                       key={index}
                       initial={{ opacity: 0, x: -20 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: index * 0.1 }}
                       onClick={() => handleQuickOption(option)}
+                      disabled={isSending}
                       className="w-full p-3 bg-white border border-border rounded-xl hover:border-[#1F3A5F] hover:bg-[#1F3A5F]/5 transition text-left"
                     >
                       {option.label}
@@ -150,6 +258,8 @@ export function Chatbot() {
                   ))}
                 </div>
               )}
+
+              <div ref={messagesEndRef} />
             </div>
 
             {/* Input */}
@@ -159,13 +269,20 @@ export function Chatbot() {
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  onKeyPress={(e) => e.key === "Enter" && handleSend()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleSend();
+                    }
+                  }}
                   placeholder="Type your message..."
                   className="flex-1 px-4 py-2 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1F3A5F]"
+                  disabled={isSending}
                 />
                 <button
                   onClick={handleSend}
-                  className="w-10 h-10 bg-[#1F3A5F] text-white rounded-xl hover:bg-[#2A4A6F] transition flex items-center justify-center"
+                  disabled={isSending || !input.trim()}
+                  className="w-10 h-10 bg-[#1F3A5F] text-white rounded-xl hover:bg-[#2A4A6F] transition flex items-center justify-center disabled:cursor-not-allowed disabled:bg-[#93A3B8]"
                 >
                   <Send className="w-5 h-5" />
                 </button>

@@ -23,9 +23,22 @@ class AIChatService:
             )
 
             self.context_loader.save_message(hospital_id, "user", user_message)
-            ai_response = self.ollama_client.generate(
-                system_prompt + f"\n\nUser: {user_message}\n\nAssistant:"
-            )
+            try:
+                ai_response = self.ollama_client.generate(
+                    system_prompt + f"\n\nUser: {user_message}\n\nAssistant:"
+                ).strip()
+            except Exception:
+                ai_response = ""
+
+            if not ai_response:
+                ai_response = self._build_fallback_reply(
+                    user_message,
+                    context,
+                    resource_analysis,
+                    emergency_analysis,
+                    forecast,
+                )
+
             self.context_loader.save_message(hospital_id, "assistant", ai_response)
             return ai_response
         except Exception as exc:
@@ -148,6 +161,57 @@ Recommendations:
 Guidelines:
 - Prioritize patient safety and fast escalation paths.
 - Base answers on the supplied hospital data.
-- If capacity is tight, recommend concrete next actions.
-- Respond in a professional and helpful manner.
-""".strip()
+        - If capacity is tight, recommend concrete next actions.
+        - Respond in a professional and helpful manner.
+        """.strip()
+
+    def _build_fallback_reply(
+        self,
+        user_message: str,
+        context: ChatContextDTO,
+        resource_analysis: ResourceAnalysisDTO,
+        emergency_analysis: EmergencyAnalysisDTO,
+        forecast: ForecastDTO,
+    ) -> str:
+        hospital_name = str(context.hospital.get("name") or "the selected hospital")
+        normalized_message = user_message.lower()
+
+        if "blood" in normalized_message:
+            available_groups = [
+                f"{group}: {units} units"
+                for group, units in context.bloodStock.items()
+                if int(units) > 0
+            ]
+            stock_summary = (
+                ", ".join(available_groups[:4])
+                if available_groups
+                else "No blood stock is currently available in the loaded hospital context."
+            )
+            return (
+                f"{hospital_name} blood stock snapshot: {stock_summary}. "
+                f"Capacity is {resource_analysis.capacityStatus.lower()} right now. "
+                f"{resource_analysis.recommendation}"
+            )
+
+        if any(token in normalized_message for token in ("emergency", "ambulance", "urgent", "critical")):
+            return (
+                f"{hospital_name} currently has {emergency_analysis.activeEmergencies} active emergencies "
+                f"and {emergency_analysis.criticalCases} critical cases. "
+                f"{emergency_analysis.recommendation} Forecast risk is {forecast.riskLevel}."
+            )
+
+        if any(token in normalized_message for token in ("icu", "ventilator", "resource", "bed", "capacity")):
+            return (
+                f"{hospital_name} currently has {resource_analysis.icuBeds} ICU beds, "
+                f"{resource_analysis.ventilators} ventilators, and {resource_analysis.oxygenBeds} oxygen beds available. "
+                f"Capacity status is {resource_analysis.capacityStatus}. "
+                f"{resource_analysis.recommendation}"
+            )
+
+        return (
+            f"{hospital_name} is currently {resource_analysis.capacityStatus.lower()} on capacity with "
+            f"{resource_analysis.icuBeds} ICU beds, {resource_analysis.ventilators} ventilators, "
+            f"and {resource_analysis.oxygenBeds} oxygen beds available. "
+            f"There are {emergency_analysis.activeEmergencies} active emergencies, and forecast risk is "
+            f"{forecast.riskLevel}. {forecast.recommendation}"
+        )
