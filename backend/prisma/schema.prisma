@@ -1,0 +1,132 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Hospital {
+  id       Int    @id @default(autoincrement())
+  name     String
+  phone    String
+  email    String @unique
+  password String
+  address  String
+  lat      Float
+  lng      Float
+
+  resources           Resource[]
+  bloodStocks         BloodStock[]
+  patients            Patient[]
+  createdEmergencies  FeatureEmergency[]            @relation("EmergencyCreatedBy")
+  acceptedEmergencies FeatureEmergency[]            @relation("EmergencyAcceptedBy")
+  transfersFrom       FeatureTransfer[]             @relation("TransferFrom")
+  transfersTo         FeatureTransfer[]             @relation("TransferTo")
+  bloodTransfersFrom  FeatureBloodNetworkTransfer[] @relation("BloodTransferFrom")
+  bloodTransfersTo    FeatureBloodNetworkTransfer[] @relation("BloodTransferTo")
+  doctors             Doctor[]
+  userEmergencies     HospitalUserEmergency[]
+}
+
+model Resource {
+  id         Int      @id @default(autoincrement())
+  hospitalId Int
+  hospital   Hospital @relation(fields: [hospitalId], references: [id])
+  name       String
+  units      Int
+  updatedAt  DateTime @updatedAt
+}
+
+model BloodStock {
+  id         Int      @id @default(autoincrement())
+  hospitalId Int
+  hospital   Hospital @relation(fields: [hospitalId], references: [id])
+  bloodGroup String
+  units      Int
+}
+
+model FeatureEmergency {
+  id             Int       @id @default(autoincrement())
+  type           String
+  priority       String
+  status         String
+  additionalInfo String
+  createdById    Int
+  createdBy      Hospital  @relation("EmergencyCreatedBy", fields: [createdById], references: [id])
+  acceptedById   Int?
+  acceptedBy     Hospital? @relation("EmergencyAcceptedBy", fields: [acceptedById], references: [id])
+  createdAt      DateTime  @default(now())
+}
+
+model Patient {
+  id         Int               @id @default(autoincrement())
+  name       String
+  age        Int
+  bloodGroup String
+  phone      String
+  condition  String
+  hospitalId Int
+  hospital   Hospital          @relation(fields: [hospitalId], references: [id])
+  transfers  FeatureTransfer[]
+}
+
+model FeatureTransfer {
+  id             Int       @id @default(autoincrement())
+  patientId      Int
+  patient        Patient   @relation(fields: [patientId], references: [id])
+  fromHospitalId Int
+  fromHospital   Hospital  @relation("TransferFrom", fields: [fromHospitalId], references: [id])
+  toHospitalId   Int?
+  toHospital     Hospital? @relation("TransferTo", fields: [toHospitalId], references: [id])
+  status         String
+  progress       String
+  createdAt      DateTime  @default(now())
+}
+
+model FeatureBloodNetworkTransfer {
+  id             Int       @id @default(autoincrement())
+  bloodGroup     String
+  units          Int
+  fromHospitalId Int
+  fromHospital   Hospital  @relation("BloodTransferFrom", fields: [fromHospitalId], references: [id])
+  toHospitalId   Int?
+  toHospital     Hospital? @relation("BloodTransferTo", fields: [toHospitalId], references: [id])
+  status         String
+  progress       String
+  createdAt      DateTime  @default(now())
+}
+
+model Doctor {
+  id             Int      @id @default(autoincrement())
+  name           String
+  specialization String[]
+  hospitalId     Int
+  hospital       Hospital @relation(fields: [hospitalId], references: [id])
+}
+
+model HospitalUserEmergency {
+  id                Int      @id @default(autoincrement())
+  emergencyType     String
+  description       String
+  patientAge        Int
+  userLat           Float
+  userLng           Float
+  hospitalId        Int
+  hospital          Hospital @relation(fields: [hospitalId], references: [id])
+  hospitalName      String
+  hospitalPhone     String
+  hospitalEmail     String
+  hospitalAddress   String
+  hospitalLat       Float
+  hospitalLng       Float
+  emergencyStatus   String
+  active            Boolean  @default(true)
+  lastUpdatedByType String?
+  lastUpdatedById   String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("hospital_user_emergency")
+}

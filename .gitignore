@@ -1,0 +1,31 @@
+# Environment files
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# Node / frontend / backend
+node_modules/
+dist/
+build/
+.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Python / AI service
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Local caches and generated artifacts
+backend/cache/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

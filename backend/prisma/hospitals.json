@@ -1,0 +1,82 @@
+[
+    {
+        "name": "Maharaja Yeshwantrao Hospital (MYH)",
+        "phone": "9827000001",
+        "email": "myhospital@mp.gov.in",
+        "address": "Residency Area, Indore, Madhya Pradesh 452001",
+        "lat": 22.7197,
+        "lng": 75.8573
+    },
+    {
+        "name": "Government P.C. Sethi Hospital",
+        "phone": "9827000002",
+        "email": "pcsethihospital@mp.gov.in",
+        "address": "AB Road, Sanyogita Ganj, Indore, Madhya Pradesh 452001",
+        "lat": 22.7183,
+        "lng": 75.8708
+    },
+    {
+        "name": "Choithram Hospital and Research Centre",
+        "phone": "9827000003",
+        "email": "info@choithramhospital.org",
+        "address": "Manik Bagh Road, Indore, Madhya Pradesh 452014",
+        "lat": 22.6916,
+        "lng": 75.8528
+    },
+    {
+        "name": "CARE CHL Hospital",
+        "phone": "9827000004",
+        "email": "info@carehospitals.com",
+        "address": "AB Road, Near LIG Square, Indore, Madhya Pradesh 452008",
+        "lat": 22.7214,
+        "lng": 75.8895
+    },
+    {
+        "name": "Bombay Hospital Indore",
+        "phone": "9827000005",
+        "email": "info@bombayhospital.com",
+        "address": "Eastern Ring Road, Vijay Nagar, Indore, Madhya Pradesh 452010",
+        "lat": 22.7535,
+        "lng": 75.8936
+    },
+    {
+        "name": "Apollo Hospital Indore",
+        "phone": "9827000006",
+        "email": "info@apolloindore.com",
+        "address": "Scheme No. 74C, Vijay Nagar, Indore, Madhya Pradesh 452010",
+        "lat": 22.7548,
+        "lng": 75.8950
+    },
+    {
+        "name": "Medanta Super Speciality Hospital Indore",
+        "phone": "9827000007",
+        "email": "info@medanta.org",
+        "address": "PU4 Scheme 54, Vijay Nagar, Indore, Madhya Pradesh 452010",
+        "lat": 22.7499,
+        "lng": 75.8974
+    },
+    {
+        "name": "Shalby Hospital Indore",
+        "phone": "9827000008",
+        "email": "info@shalby.org",
+        "address": "Bypass Road, Near MR10 Crossing, Indore, Madhya Pradesh 452010",
+        "lat": 22.7445,
+        "lng": 75.9058
+    },
+    {
+        "name": "Sri Aurobindo Medical College and Post Graduate Institute",
+        "phone": "9827000009",
+        "email": "info@saimsonline.com",
+        "address": "Indore-Ujjain State Highway, Rau, Indore, Madhya Pradesh 453331",
+        "lat": 22.5937,
+        "lng": 75.8034
+    },
+    {
+        "name": "Index Medical College Hospital and Research Centre",
+        "phone": "9827000010",
+        "email": "info@indexhospital.in",
+        "address": "Nemawar Road, NH59A, Indore, Madhya Pradesh 452016",
+        "lat": 22.6396,
+        "lng": 75.9213
+    }
+]
